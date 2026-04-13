@@ -35,13 +35,13 @@
             justify-content: center;
             align-items: center;
             padding: 20px;
-            padding-bottom: 60px; /* Space for footer */
+            padding-bottom: 60px;
             color: var(--white);
         }
 
         .container {
             width: 100%;
-            max-width: 500px;
+            max-width: 550px;
         }
 
         .glass-card {
@@ -151,14 +151,40 @@
         }
 
         .result-card h2 {
-            font-size: 1.4rem;
+            font-size: 1.5rem;
             margin-bottom: 0.2rem;
         }
 
         .date-text {
             color: var(--text-light);
-            font-size: 0.9rem;
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+        }
+
+        .time-selector-container {
             margin-bottom: 1.5rem;
+            display: inline-flex;
+            align-items: center;
+            background: #f0f4f8;
+            padding: 8px 16px;
+            border-radius: 50px;
+            gap: 10px;
+        }
+
+        .time-selector-container label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .time-selector-container select {
+            border: none;
+            background: transparent;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-main);
+            outline: none;
+            cursor: pointer;
         }
 
         .weather-info {
@@ -175,13 +201,26 @@
         }
 
         .icon-temp i {
-            font-size: 3rem;
+            font-size: 3.5rem;
             color: var(--primary-color);
         }
 
-        .icon-temp span {
-            font-size: 2.5rem;
+        .main-temp-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .temp-primary {
+            font-size: 3rem;
             font-weight: 700;
+            line-height: 1;
+        }
+
+        .temp-secondary {
+            font-size: 1.2rem;
+            color: var(--text-light);
+            font-weight: 600;
         }
 
         .weather-details {
@@ -208,7 +247,8 @@
 
         .detail-item .value {
             font-weight: 600;
-            font-size: 1rem;
+            font-size: 0.95rem;
+            text-align: center;
         }
 
         .fade-in {
@@ -243,13 +283,13 @@
         <div class="glass-card">
             <header>
                 <h1>Weather Lookup</h1>
-                <p>Enter a city or ZIP code and select a date to get the weather report.</p>
+                <p>Enter a city or ZIP code and select a date.</p>
             </header>
 
             <form id="weather-form">
                 <div class="input-group">
                     <label for="location"><i class="fas fa-map-marker-alt"></i> City Name or ZIP Code</label>
-                    <input type="text" id="location" placeholder="e.g., London or 10001" required>
+                    <input type="text" id="location" placeholder="e.g., 506003 or London" required>
                 </div>
                 <div class="input-group">
                     <label for="date"><i class="fas fa-calendar-alt"></i> Select Date</label>
@@ -267,10 +307,18 @@
                 <h2 id="result-location">Location Name</h2>
                 <p id="result-date" class="date-text">Selected Date</p>
                 
+                <div class="time-selector-container">
+                    <label for="time-select"><i class="far fa-clock"></i> Time:</label>
+                    <select id="time-select"></select>
+                </div>
+                
                 <div class="weather-info">
                     <div class="icon-temp">
                         <i id="weather-icon" class="fas fa-sun"></i>
-                        <span id="result-temp">--°C</span>
+                        <div class="main-temp-wrapper">
+                            <span id="temp-c" class="temp-primary">--°C</span>
+                            <span id="temp-f" class="temp-secondary">--°F</span>
+                        </div>
                     </div>
                     <div class="weather-details">
                         <div class="detail-item">
@@ -279,11 +327,11 @@
                         </div>
                         <div class="detail-item">
                             <span class="label">Max Temp</span>
-                            <span id="temp-max" class="value">--°C</span>
+                            <span id="temp-max" class="value">--</span>
                         </div>
                         <div class="detail-item">
                             <span class="label">Min Temp</span>
-                            <span id="temp-min" class="value">--°C</span>
+                            <span id="temp-min" class="value">--</span>
                         </div>
                     </div>
                 </div>
@@ -297,12 +345,20 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // Set today's date as default
+            const dateInputEl = document.getElementById('date');
+            const todayStr = new Date().toISOString().split('T')[0];
+            dateInputEl.value = todayStr;
+
             const form = document.getElementById('weather-form');
             const submitBtn = document.getElementById('submit-btn');
             const btnText = document.getElementById('btn-text');
             const spinner = document.getElementById('spinner');
             const resultCard = document.getElementById('weather-result');
             const errorMsg = document.getElementById('error-message');
+            const timeSelect = document.getElementById('time-select');
+
+            let globalHourlyData = null; // Store fetched data
 
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -310,51 +366,53 @@
                 const locationInput = document.getElementById('location').value.trim();
                 const dateInput = document.getElementById('date').value;
 
-                // Reset UI to Loading State
                 toggleLoading(true);
 
                 try {
-                    // Step 1: Geocoding - Convert City/ZIP to Latitude and Longitude
+                    // Step 1: Geocoding
                     const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationInput)}&format=json&limit=1`);
                     const geoData = await geoResponse.json();
 
                     if (!geoData || geoData.length === 0) {
-                        throw new Error("Location not found. Please try a valid City name or ZIP code.");
+                        throw new Error("Location not found. Please try adding country name if ZIP fails (e.g. '506003 India').");
                     }
 
                     const lat = geoData[0].lat;
                     const lon = geoData[0].lon;
-                    const locationName = geoData[0].display_name.split(',')[0]; // Get primary city/area name
+                    const locationName = geoData[0].display_name.split(',')[0];
 
-                    // Step 2: Date Routing (Past dates use Archive API, Future dates use Forecast API)
+                    // Step 2: Determine API Endpoint (Archive vs Forecast)
                     const selectedDate = new Date(dateInput);
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
 
                     let weatherApiUrl = '';
                     
+                    // We request HOURLY data now, to match exact times
                     if (selectedDate < today) {
-                        // Historical Weather Data
-                        weatherApiUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${dateInput}&end_date=${dateInput}&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto`;
+                        weatherApiUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${dateInput}&end_date=${dateInput}&hourly=temperature_2m,weathercode&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
                     } else {
-                        // Forecast Weather Data
-                        weatherApiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&start_date=${dateInput}&end_date=${dateInput}&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto`;
+                        weatherApiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&start_date=${dateInput}&end_date=${dateInput}&hourly=temperature_2m,weathercode&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
                     }
 
-                    // Step 3: Fetch Weather Data
+                    // Step 3: Fetch Data
                     const weatherResponse = await fetch(weatherApiUrl);
                     const weatherData = await weatherResponse.json();
 
                     if (weatherData.error) {
-                        throw new Error("Weather data is currently unavailable for this specific date and location.");
+                        throw new Error("Weather data unavailable for this date.");
                     }
 
-                    if (!weatherData.daily || !weatherData.daily.time) {
-                        throw new Error("Date is out of the supported range. Please select a date within the past 80 years or next 14 days.");
-                    }
+                    globalHourlyData = weatherData; // Save for time dropdown changes
 
-                    // Step 4: Update UI with Results
-                    updateUI(weatherData.daily, locationName, dateInput);
+                    // Step 4: Populate Time Dropdown & Init UI
+                    populateTimeDropdown(dateInput);
+                    updateStaticUI(weatherData.daily, locationName, dateInput);
+                    
+                    // Trigger UI update for the currently selected time
+                    updateHourlyUI(); 
+
+                    resultCard.classList.remove('hidden');
 
                 } catch (error) {
                     showError(error.message);
@@ -362,6 +420,9 @@
                     toggleLoading(false);
                 }
             });
+
+            // Handle Time Change
+            timeSelect.addEventListener('change', updateHourlyUI);
 
             function toggleLoading(isLoading) {
                 if (isLoading) {
@@ -382,39 +443,81 @@
                 errorMsg.classList.remove('hidden');
             }
 
-            function updateUI(dailyData, locationName, dateString) {
+            // Helper to convert Celsius to Fahrenheit
+            function toFahrenheit(celsius) {
+                return ((celsius * 9/5) + 32).toFixed(1);
+            }
+
+            function populateTimeDropdown(dateString) {
+                timeSelect.innerHTML = '';
+                
+                // Create 24 hours options
+                for (let i = 0; i < 24; i++) {
+                    let hourString = i.toString().padStart(2, '0') + ':00';
+                    let displayString = i === 0 ? '12:00 AM' : 
+                                        i < 12 ? `${i}:00 AM` : 
+                                        i === 12 ? '12:00 PM' : 
+                                        `${i - 12}:00 PM`;
+                    
+                    let option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = displayString;
+                    timeSelect.appendChild(option);
+                }
+
+                // If the selected date is today, default to the current hour
+                const selectedDate = new Date(dateString);
+                const today = new Date();
+                
+                if (selectedDate.toDateString() === today.toDateString()) {
+                    const currentHour = today.getHours();
+                    timeSelect.value = currentHour;
+                } else {
+                    timeSelect.value = 12; // Default to Noon for other days
+                }
+            }
+
+            function updateStaticUI(dailyData, locationName, dateString) {
                 document.getElementById('result-location').textContent = locationName;
                 
-                // Format date beautifully
                 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
                 document.getElementById('result-date').textContent = new Date(dateString).toLocaleDateString(undefined, options);
 
-                const maxTemp = dailyData.temperature_2m_max[0];
-                const minTemp = dailyData.temperature_2m_min[0];
-                
-                // Calculate average temp for the main display
-                const avgTemp = ((maxTemp + minTemp) / 2).toFixed(1);
+                const maxTempC = dailyData.temperature_2m_max[0];
+                const minTempC = dailyData.temperature_2m_min[0];
 
-                document.getElementById('temp-max').textContent = `${maxTemp}°C`;
-                document.getElementById('temp-min').textContent = `${minTemp}°C`;
-                document.getElementById('result-temp').textContent = `${avgTemp}°C`;
-
-                // Interpret Weather Code
-                const wmoCode = dailyData.weathercode[0];
-                const weatherInfo = getWeatherCondition(wmoCode);
-                
-                document.getElementById('condition').textContent = weatherInfo.text;
-                document.getElementById('weather-icon').className = `fas ${weatherInfo.icon}`;
-
-                resultCard.classList.remove('hidden');
+                // Display Min/Max in both C and F
+                document.getElementById('temp-max').innerHTML = `${maxTempC}°C<br><span style="font-size:0.8em; color:#666">${toFahrenheit(maxTempC)}°F</span>`;
+                document.getElementById('temp-min').innerHTML = `${minTempC}°C<br><span style="font-size:0.8em; color:#666">${toFahrenheit(minTempC)}°F</span>`;
             }
 
-            // World Meteorological Organization (WMO) Weather interpretation codes
-            function getWeatherCondition(code) {
+            function updateHourlyUI() {
+                if (!globalHourlyData) return;
+
+                const selectedHourIndex = parseInt(timeSelect.value);
+                
+                // Get exact hourly data
+                const hourlyTempC = globalHourlyData.hourly.temperature_2m[selectedHourIndex];
+                const hourlyCode = globalHourlyData.hourly.weathercode[selectedHourIndex];
+
+                // Update Main Temperature
+                document.getElementById('temp-c').textContent = `${hourlyTempC.toFixed(1)}°C`;
+                document.getElementById('temp-f').textContent = `${toFahrenheit(hourlyTempC)}°F`;
+
+                // Update Icon and Condition Status based on the exact hour
+                const weatherInfo = getWeatherCondition(hourlyCode, selectedHourIndex);
+                document.getElementById('condition').textContent = weatherInfo.text;
+                document.getElementById('weather-icon').className = `fas ${weatherInfo.icon}`;
+            }
+
+            // WMO Weather interpretation codes with day/night awareness
+            function getWeatherCondition(code, hour) {
+                const isNight = hour < 6 || hour > 18; // Rough estimate for night time icons
+                
                 const conditions = {
-                    0: { text: 'Clear sky', icon: 'fa-sun' },
-                    1: { text: 'Mainly clear', icon: 'fa-sun' },
-                    2: { text: 'Partly cloudy', icon: 'fa-cloud-sun' },
+                    0: { text: 'Clear sky', icon: isNight ? 'fa-moon' : 'fa-sun' },
+                    1: { text: 'Mainly clear', icon: isNight ? 'fa-moon' : 'fa-sun' },
+                    2: { text: 'Partly cloudy', icon: isNight ? 'fa-cloud-moon' : 'fa-cloud-sun' },
                     3: { text: 'Overcast', icon: 'fa-cloud' },
                     45: { text: 'Fog', icon: 'fa-smog' },
                     48: { text: 'Rime fog', icon: 'fa-smog' },
@@ -434,7 +537,7 @@
                     96: { text: 'Thunderstorm & Hail', icon: 'fa-bolt' },
                     99: { text: 'Heavy Thunderstorm', icon: 'fa-bolt' },
                 };
-                return conditions[code] || { text: 'Unknown Condition', icon: 'fa-cloud' };
+                return conditions[code] || { text: 'Unknown', icon: 'fa-cloud' };
             }
         });
     </script>
